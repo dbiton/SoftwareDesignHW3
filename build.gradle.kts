@@ -4,7 +4,7 @@ import java.time.Duration
 import java.awt.Desktop
 
 plugins {
-    kotlin("jvm") version "1.4.30"
+    kotlin("jvm") version "1.6.0"
     id("org.jetbrains.dokka") version "1.4.30"
     `maven-publish`
 }

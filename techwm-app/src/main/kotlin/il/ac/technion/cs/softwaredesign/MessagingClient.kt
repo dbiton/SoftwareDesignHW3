@@ -43,29 +43,30 @@ class MessagingClient(
      * some helper private functions
      */
 
-    private fun inboxRec(index: Int, inbox: Inbox, messageCount: Int) : CompletableFuture<Inbox> {
-        return if (index >= messageCount) CompletableFuture.completedFuture(inbox)
+    // recursively get all messages in inbox
+    private fun readInbox(indexBegin: Int, indexEnd: Int, inbox: Inbox) : CompletableFuture<Inbox> {
+        return if (indexBegin >= indexEnd) CompletableFuture.completedFuture(inbox)
         else CompletableFuture.completedFuture(Unit)
-            .thenCompose { readMessage(index) }
+            .thenCompose { readMessage(indexBegin) }
             .thenCompose { message ->
-                if (message == null) inboxRec(index+1, inbox, messageCount)
+                if (message == null) readInbox(indexBegin+1, indexEnd, inbox)
                 else {
                     val oldList = inbox[message.fromUser] ?: listOf()
                     val newInbox = inbox.toMutableMap()
                     newInbox[message.fromUser] = oldList + listOf(message)
-                    inboxRec(index+1, newInbox.toMap(), messageCount)
+                    readInbox(indexBegin+1, indexEnd, newInbox.toMap())
                 }
             }
     }
 
     private fun readMessage(index: Int) : CompletableFuture<Message?> {
-        return storage.read(username + "_" + index + "_id")
+        return storage.read("$username $index id")
             .thenCompose { id ->
                 if (id == null) CompletableFuture.completedFuture(null)
-                else storage.read(username + "_" + index + "_message")
+                else storage.read("$username $index message")
                     .thenCompose { message ->
                         if (message == null) CompletableFuture.completedFuture(null)
-                        else storage.read(username + "_" + index + "_fromUser")
+                        else storage.read("$username $index fromUser")
                             .thenApply { fromUser ->
                                 if (fromUser == null) null
                                 else Message(id, fromUser, message)
@@ -138,7 +139,7 @@ class MessagingClient(
             .thenApply { if (!isLoggedIn) throw (PermissionException()) }
             .thenCompose { readCountMessages(username) }
             .thenCompose { messageCount ->
-                inboxRec(0, mapOf(), messageCount.toInt())
+                readInbox(0, messageCount.toInt(),  mapOf())
             }
     }
 
@@ -160,10 +161,9 @@ class MessagingClient(
             else {
                 readCountMessages(toUsername).thenApply {
                     count -> val message = Message(count, username, messageString)
-                    storage.write(toUsername + "_" + count + "_id", message.id)
-                        .thenCompose { storage.write("$toUsername $count message", message.message) }
-                        .thenCompose { storage.write("$toUsername $count fromUser", message.fromUser) }
-                        .thenCompose { storage.write("$toUsername count", (count.toInt() + 1).toString()) }
+                                        storage.write("$toUsername $count message", message.message)
+                        .thenCompose {  storage.write("$toUsername $count fromUser", message.fromUser) }
+                        .thenCompose {  storage.write("$toUsername count", (count.toInt() + 1).toString()) }
                 }
             }
         }
@@ -176,9 +176,9 @@ class MessagingClient(
      * @throws IllegalArgumentException If a message with the given [id] does not exist
      */
     fun deleteMessage(id: String): CompletableFuture<Unit> {
-        val fromUserKey = "$username $id message"
-        val messageKey = "$username $id fromUser"
-        val idKey = "$username $id id"
+        val fromUserKey =   "$username $id message"
+        val messageKey =    "$username $id fromUser"
+        val idKey =         "$username $id id"
         return CompletableFuture.completedFuture(Unit)
             .thenApply {
                 if (!isLoggedIn) throw (PermissionException())
@@ -227,15 +227,17 @@ class MessagingClientFactoryI @Inject constructor (private val storage : Storage
     private val usersOffline: MutableSet<MessagingClient> = mutableSetOf()
 
     override fun get(username: String, password: String): CompletableFuture<MessagingClient> {
-        val filtered = (usersOnline + usersOffline).filter { user -> user.getUsername() == username }
-        val oldUser: MessagingClient? = if (filtered.isEmpty()) null
-        else filtered[0]
+        val usersFiltered = (usersOnline + usersOffline).filter { user -> user.getUsername() == username }
 
-        oldUser?.logout()
-        return if (oldUser == null) {
-            val newUser = MessagingClient(username, password, storage, usersOnline, usersOffline, false)
-            usersOffline.add(newUser)
-            CompletableFuture.completedFuture(newUser)
-        } else CompletableFuture.completedFuture(oldUser)
+        return if (usersFiltered.isNotEmpty()){
+            val user = usersFiltered[0]
+            // if the user is already offline logout does nothing, otherwise it moves it form usersOnline to usersOffline
+            user.logout()
+            CompletableFuture.completedFuture(user)
+        } else {
+            val user = MessagingClient(username, password, storage, usersOnline, usersOffline, false)
+            usersOffline.add(user)
+            CompletableFuture.completedFuture(user)
+        }
     }
 }

@@ -8,7 +8,7 @@ import dev.misfitlabs.kotlinguice4.getInstance
 import org.junit.jupiter.api.Test
 
 class MessagingClientStaffTest {
-    private val injector = Guice.createInjector(MessagingClientModule())
+    private val injector = Guice.createInjector(MessagingClientTestModule())
     private val clientFactory = injector.getInstance<MessagingClientFactory>()
 
     @Test
