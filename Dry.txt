@@ -1,0 +1,7 @@
+Opinions on the APIs we used:
+1. SifriTaub:
+a. Liked:
+b. Disliked:
+2. Library we got:
+a. Liked:
+b. Disliked:
